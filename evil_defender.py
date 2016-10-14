@@ -1,4 +1,3 @@
-import rethinkdb as r
 import binascii
 import json
 import time, os, csv, threading, smtplib, glob
@@ -30,6 +29,7 @@ COMMANDS = {
 
 WHITELIST = {}
 
+ATTACKS = {}
 
 DB_NAME = 'evil_twin'
 
@@ -77,7 +77,7 @@ def validate_mon_iface(conf):
         if conf['mon_device'] in row:
             found = True
     if not found:
-        print('interface {} cound not be found}'.format(conf['mon_device']))
+        print('interface {} cound not be found'.format(conf['mon_device']))
         raise Exception('interface not found')
     return conf['mon_device']
 
@@ -95,7 +95,7 @@ def get_mons():
     lines = str(Popen(COMMANDS['list_mons'], stdout=subprocess.PIPE) .communicate() [0]).split('\n')
     mons = []
     for line in lines:
-        if 'mon' in line:
+        if 'mon' in line or 'smoothie' in line:
             mons.append(line.split('\t')[0])
     return mons
 
@@ -247,16 +247,20 @@ def create_defaultdict(aps):
     return ssids_dict
 
 
-def deauth(bssid, ssid, channel, wireless_intreface, repeat_time=None):
+def deauth(bssid, ssid, channel, wireless_interface, repeat_time=None):
     deauth_mon = prep_mon_iface(wireless_interface, channel=channel)
-    deauth_dev = replaying.Aireplay(interface=deauth_mon, a=bssid, e=ssid)
+    deauth_dev = replaying.Aireplay(attack='deauth', interface=deauth_mon, a=bssid, e=ssid)
     deauth_dev.start()
+    ATTACKS['{}_{}_{}'.format(bssid,ssid, channel)] = (deauth_mon, deauth_dev)
 
 
 def defence(evil_aps, wireless_interface):
     for ap in evil_aps:
-        print('deauthing clients from ssid: {}, bssid{}'.format(ap['BSSID'], ap['ESSID']))
-        deauth(bssid=ap['BSSID'], ssid=ap['ESSID'], channel=ap['channel'], wireless_interface=wireless_interface)
+        if '{}_{}_{}'.format(ap['BSSID'], ap['ESSID'], ap['channel']) not in ATTACKS:
+            print('deauthing clients from ssid: {}, bssid{}'.format(ap['BSSID'], ap['ESSID']))
+            deauth(bssid=ap['BSSID'], ssid=ap['ESSID'], channel=ap['channel'], wireless_interface=wireless_interface)
+        else:
+            print('still attacking ssid: {}, bssid{}'.format(ap['BSSID'], ap['ESSID']))
 
 
 def main(conf_file):
@@ -269,13 +273,19 @@ def main(conf_file):
     time.sleep(5)
     dump = start_dump(mon_iface)
     aps, ouis = sniff_packets(mon_iface)
-    ssids = dump.tree
-    ssids_dict = create_defaultdict(ssids)
-    print("SSIDS: {}".format(ssids_dict))
-    for ssid in conf['whitelist_ssids']:
-        if ssid in ssids_dict:
-            WHITELIST[ssid] = ssids_dict[ssid]
-    print("whitelist: {}".format(WHITELIST))
+    while not WHITELIST:
+        ssids = dump.tree
+        ssids_dict = create_defaultdict(ssids)
+        print("SSIDS: {}".format(ssids_dict))
+        for ssid in conf['whitelist_ssids']:
+            if ssid in ssids_dict:
+                WHITELIST[ssid] = ssids_dict[ssid]
+        print("whitelist: {}".format(WHITELIST))
+        if WHITELIST:
+            break
+        else:
+            print('Still looking for whitelist_aps')
+        time.sleep(5)
     input('press any key to start defence')
     try:
         while True:
