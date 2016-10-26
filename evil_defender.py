@@ -23,12 +23,17 @@ COMMANDS = {
     'kill_mon': lambda mon: ['airmon-ng', 'stop', mon],
     'dump_ssids': lambda wif: 'exec airodump-ng --output-format csv -w out.csv {} &'.format(wif),#["airodump-ng", "--output-format", "csv",  "-w", "out.csv", wif],
     'dump_pids': "ps  aux | grep '[a]irodump-ng --output-format csv' | awk -F ' ' '{print $2}'",
-
+    'iw_start_mon': lambda iface, name: ['iw', iface, 'interface', 'add', name, 'type', 'monitor'],
+    'iw_set_channel': lambda mon, channel: ['iw', mon, 'set', 'channel', channel],
 
 }
 
+COMPARE_KEYS = ['IDlength', 'channel', 'LANIP', 'Speed', 'Privacy', 'Authentication', 'Key', 'BSSID', 'Cipher']
+LAST_MON = 0
+MON_PREFIX = 'evil_{}'
 WHITELIST = {}
-
+global MON_IFACE
+MON_IFACE = None
 ATTACKS = {}
 
 DB_NAME = 'evil_twin'
@@ -158,6 +163,7 @@ def sniff_packets(mon_iface):
     aps = {}
     ouis = []
     insert_ap_suc = partial(insert_ap, aps=aps, ouis=ouis)
+    print("interface: {}".format(mon_iface))
     sniff(iface=mon_iface, prn=insert_ap_suc, count=100, store=False, lfilter=lambda p: (Dot11Beacon in p or Dot11ProbeResp in p))
     return aps, ouis
 
@@ -181,13 +187,28 @@ def cmd_iwconfig():
                         ifaces[iface] = 0
     return mons, ifaces
 
+def iw_start_mon(interface, channel=None, name=None):
+    global LAST_MON
+    LAST_MON += 1
+    mon_name = name or MON_PREFIX.format(LAST_MON)
+    print("creating mon with name:{} channel:{}".format(mon_name, channel))
+    call(COMMANDS['iw_start_mon'](interface, mon_name))
+    if channel:
+        call(COMMANDS['iw_set_channel'](mon_name, channel))
+    return mon_name
 
-def prep_mon_iface(wireless_interface, channel=None):
+
+def prep_mon_iface(wireless_interface=MON_IFACE, channel=None):
     call(COMMANDS['check_kill'])
-    mon = management.Airmon(interface=wireless_interface, channel=channel)
-    mon_iface = mon.start()
-    print("Airmon RES \n {}".format(mon_iface))
-    return mon_iface
+    global MON_IFACE
+    if not MON_IFACE:
+        mon = management.Airmon(interface=wireless_interface, channel=channel)
+        MON_IFACE = mon.start().split(']')[-1]
+        print("Airmon RES \n {}".format(MON_IFACE))
+        return MON_IFACE
+    else:
+        mon_iface = iw_start_mon(MON_IFACE, channel)
+        return mon_iface
 
 
 def delete_stale_files():
@@ -229,12 +250,30 @@ def get_ssids(mon_iface):
     return ssids
 
 
+def match_ssid_keys(ssid, ssids_dict):
+    for key in ssids_dict.keys():
+        if ssid.lower() in key.lower():
+            print("ssid:{}, key:{}".format(ssid.lower(), key.lower()))
+            return key
+
+
+def compare_aps(ssid_dicts, evil_ssid_dict):
+    for ssid_dict in ssid_dicts:
+        for key in COMPARE_KEYS:
+            if not ssid_dict.get(key) == evil_ssid_dict.get(key):
+                print("key:{}, v1:{}, v2: {}".format(key, ssid_dict.get(key), evil_ssid_dict.get(key)))
+                return True
+    return False
+
+
 def detect_evil_ap(ssids_dict):
     evil_aps = []
     for ssid in WHITELIST.keys():
-        if ssid in ssids_dict:
-            for ssid_detail in ssids_dict[ssid]:
-                if WHITELIST[ssid] != ssid_detail:
+        print(ssids_dict.keys())
+        evil_ssid = match_ssid_keys(ssid, ssids_dict)
+        if evil_ssid:
+            for ssid_detail in ssids_dict[evil_ssid]:
+                if compare_aps(WHITELIST[ssid], ssid_detail):
                     evil_aps.append(ssid_detail)
     return evil_aps
 
@@ -255,6 +294,7 @@ def deauth(bssid, ssid, channel, wireless_interface, repeat_time=None):
 
 
 def defence(evil_aps, wireless_interface):
+    global ATTACKS
     for ap in evil_aps:
         if '{}_{}_{}'.format(ap['BSSID'], ap['ESSID'], ap['channel']) not in ATTACKS:
             print('deauthing clients from ssid: {}, bssid{}'.format(ap['BSSID'], ap['ESSID']))
@@ -272,11 +312,12 @@ def main(conf_file):
     mon_iface = prep_mon_iface(wireless_interface)
     time.sleep(5)
     dump = start_dump(mon_iface)
+    time.sleep(10)
     aps, ouis = sniff_packets(mon_iface)
     while not WHITELIST:
         ssids = dump.tree
         ssids_dict = create_defaultdict(ssids)
-        print("SSIDS: {}".format(ssids_dict))
+        print("SSIDS: {}".format(ssids_dict.keys()))
         for ssid in conf['whitelist_ssids']:
             if ssid in ssids_dict:
                 WHITELIST[ssid] = ssids_dict[ssid]
