@@ -153,7 +153,7 @@ def insert_ap(pkt, aps, ouis):
 
 def start_dump(mon_iface, **kwargs):
     print(mon_iface)
-    dump = scanning.Airodump(interface=mon_iface, **kwargs)
+    dump = scanning.Airodump(interface=mon_iface, cswitch="1",**kwargs)
     dump.start()
     return dump
 

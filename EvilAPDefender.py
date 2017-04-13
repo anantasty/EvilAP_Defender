@@ -48,14 +48,12 @@ def Usage():
     print "\n###############################################################\n"
     print "EvilAP_Defender version 1.7 - Protect your WIFI from hackers!"
     # Please don't remove this. At least respect my rights!
-    print "Auther: Mohamed Hassan Mohamed Idris"
     print "\n====================================\n"
     print "Normal Mode Usage: {} -N [-u <username> -p <password>]\n".format(sys.argv[0])
     print "Learning Mode Usage: {} -L [-u <username> -p <password>]\n".format(sys.argv[0])
     print "Help Screen: {} -h or --help\n".format(sys.argv[0])
     print "MySQL Username & Passowrd can be provided as arguments or after running the Tool"
     print "\n====================================\n"
-    print "Special thanks to: Khaled Alhawasli, Mukhammed Khalilov, and Ayman Babkir"
     print "\n###############################################################\n"
     sys.exit(2)
 
@@ -792,7 +790,7 @@ try:
     output = Popen("iwconfig", stdout=PIPE).communicate()[0]
     wireless_interface = ""
     mon_iface = ""
-    if "wlan" in output:
+    if "wlan" in output or "wlp" in output:
 	wireless_interface = output[0:6].strip()
     else:
 	print bcolors.FAIL + "\n\nCould not find the wireless interface (wlan)!\n" + bcolors.ENDC
@@ -801,7 +799,8 @@ try:
 	sys.exit(2)
 
     # Check if mon interface is not disabled    
-    airmon_data = Popen("airmon-ng", stdout=PIPE).communicate()[0]
+    airmon_data = Popen("sudo", "airmon-ng", stdout=PIPE).communicate()[0]
+    print "airmon_data: {}".format(airmon_data)
     if 'mon' in airmon_data:
 	print bcolors.FAIL + "\n\nWarning: Monitor interface has been detected."
 	print "Please remove all monitoring interfaces before you run the application\n" + bcolors.ENDC
@@ -824,11 +823,11 @@ try:
 
 	print 'Creating a monitoring interface'
 
-	airmon_out = Popen(["airmon-ng", "start", wireless_interface], stdout=PIPE).communicate()[0]
-
+        airmon_out = Popen(["sudo", "airmon-ng", "start", wireless_interface], stdout=PIPE).communicate()[0]
+        print "res: {}".format(airmon_out)
 	mon_iface = get_moniface()
-
-	if mon_iface != 0: 	
+        print "mon_iface: {}".format(mon_iface)
+        if mon_iface != 0:
 		print "Monitor interface {} created successfully.\n".format(mon_iface)
 	else:
 		print "Monitor interface cannot be created. Make sure your card support monitor mode and Aircrack-ng suite.\n"

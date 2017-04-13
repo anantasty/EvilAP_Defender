@@ -1,0 +1,22 @@
+{
+  "mon_device": "wlx98ded00b9103",
+  "db_creds": "", 
+  "whitelist_ssids": [
+    "Seahawks", 
+    "aa_cell"
+  ], 
+  "emai": {
+    "username": "anant.asty@gmail.com", 
+    "url": "gmail.com", 
+    "password": "pwd"
+  }, 
+  "db_host": "localhost",
+  "db_port": 28015,
+  "whitelist_bssids": [
+    ""
+  ],
+  "deauth": {
+    "tries": 5,
+    "timeout": 30
+  }
+}
